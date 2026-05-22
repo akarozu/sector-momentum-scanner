@@ -91,7 +91,7 @@ GET https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketDa
 | 2 | K 线根数不足 MACD | < 35 根 | 不计算 MACD；其他指标正常输出；不触发 MACD 相关信号 |
 | 3 | K 线根数不足 RSI | < 20 根 | 不计算 RSI；其他指标正常输出 |
 | 4 | K 线根数不足 20 日新高 | < 35 根 | 不判断 20 日新高 |
-| 5 | **数据严重延迟** | 最新 K 线日期距今 ≥ 2 个自然日 | 标记「⚠️数据延迟」；**禁止触发 🔴启动观察、🟢动量加速**；其他信号正常输出但加注延迟说明 |
+| 5 | **数据严重延迟** | 最新 K 线日期距今 ≥ 2 个自然日 | 标记「⚠️数据延迟」；**禁止触发 🔴启动观察、🟢动量加速**；其他信号正常输出但加注延迟说明；若无明确历史信号则不生成新标签，仅提示数据延迟 |
 | 6 | 单只 ETF 数据异常 | 上述任意一条 | 只影响该 ETF；其他 ETF 正常参与排名 |
 
 ### 交易日与非交易日处理
@@ -325,7 +325,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
     ma_bearish = not etf_data['ma_bullish']
 
     if macd_dead and rsi_below_40 and ma_bearish:
-        return "🟤机会流失", "减仓/离场提醒"
+        return "🟤机会流失", "趋势失效提示，建议降权观察"
 
     # === 阶段三：过热回落 ===
     # RSI 从 70+ 快速回落至 50 以下，且成交量萎缩
@@ -355,10 +355,11 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
     volume_expanding = etf_data['volume_ratio'] is not None and etf_data['volume_ratio'] > 1.2
 
     if delay_flag:
-        # 数据延迟：禁止触发启动/加速信号
+        # 数据延迟：禁止触发 🔴启动观察 / 🟢动量加速
+        # 若有历史信号则保留参考；无历史信号则不生成新标签，仅输出延迟提示
         if etf_data['new_high_20d'] and etf_data['relative_strength']['5日'] > 0:
             return "🟡趋势增强（延迟）", "趋势成立但数据延迟，谨慎确认"
-        return None, None  # 不生成信号
+        return None, None  # 数据不足或不满足历史条件，不生成新信号
 
     if macd_golden and rsi_above_50 and volume_expanding:
         if etf_data['new_high_20d']:
@@ -393,7 +394,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 | 排名 | 板块 | 综合得分 | 5日相对 | 10日相对 | 20日相对 | RSI | 20日新高 | 信号 |
 |------|------|---------|---------|---------|---------|-----|---------|------|
-| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 78.6 | ▲ | 🟢动量加速 |
+| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 70.6 | ▲ | 🟢动量加速 |
 | 2 | 机器人 | +41 | +4.1% | +6.2% | +9.8% | 71.2 | ▲ | 🟢动量加速 |
 | 3 | 人工智能 | +38 | +3.8% | +5.1% | +7.6% | 68.4 | — | ⚪高位整固 |
 | 4 | 通信设备 | +29 | +2.1% | +3.4% | +5.2% | 62.3 | ▲ | 🟡趋势增强 |
@@ -405,7 +406,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 ### 动量排名
 
 **今日综合 Top 3**（按综合得分）
-1. 半导体（+52）：5日超额+6.3%，RSI 78.6，动量加速
+1. 半导体（+52）：5日超额+6.3%，RSI 70.6，动量加速
 2. 机器人（+41）：5日超额+4.1%，RSI 71.2，均线多头
 3. 人工智能（+38）：5日超额+3.8%，RSI 68.4，高位整固
 
@@ -435,7 +436,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 - **🔴 启动观察**：无（数据均已延迟或信号不足）
 - **🟡 趋势增强**：通信设备（MACD 持续扩张，成交量放大 1.4 倍）
-- **🟢 动量加速**：半导体（RSI 78.6，赔率 1.2:1，均线多头延续）
+- **🟢 动量加速**：半导体（RSI 70.6，赔率1.5:1，均线多头延续）
 - **⚠️ 数据延迟**：卫星通信（最新数据 2026-05-21，延迟1天）
 
 ---

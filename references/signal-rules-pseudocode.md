@@ -193,13 +193,15 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 ## 四、半导体复盘映射（2026年4月行情验证）
 
 > 详见 `references/semiconductor-rally-2026.md`，本节说明如何将复盘数据映射到判定规则。
+>
+> **重要更正（v2.0）**：4/8 日 MACD 柱由负转正（+0.0029），但 RSI 仅 43.7（< 50）且无量能放大，按规则应输出 **MACD预警/观察**，而非启动观察。真正的启动观察信号为 4/9（RSI 上穿 50 + 量比 1.3x）。
 
 | 日期 | 实际信号 | 按规则应触发 | 是否符合 | 说明 |
 |------|---------|------------|--------|------|
 | 2026-03-31 | 阶段新低 | — | — | 尚未满足启动条件 |
 | 2026-04-01 | 修复中 | 🔵超跌反弹观察 | ✅ | RSI从27.5升至36.1，成交量未明显放大 |
-| **2026-04-08** | **MACD金叉（预警）** | **🔴预警** | **✅** | MACD柱+0.0029（由负转正），RSI 43.7<50，尚不满足启动条件（启动需RSI>50）；本次输出为MACD金叉预警，关注RSI是否随后站上50 |
-| 2026-04-09 | RSI>50确认 | 🟡趋势增强 | ✅ | RSI上穿50，成交量放大1.3倍，满足完整启动条件后升级为趋势增强 |
+| **2026-04-08** | **MACD金叉（预警）** | **⚪MACD预警/观察** | **✅** | MACD柱+0.0029（由负转正），RSI 43.7<50，尚不满足启动条件（启动需RSI>50）；本次输出为MACD预警，关注RSI是否随后站上50 |
+| **2026-04-09** | **RSI>50 + 量比1.3x → 启动确认** | **🔴启动观察** | **✅** | RSI上穿50（52.3）+ 成交量放大1.3倍，三条件同时满足，正式触发启动观察 |
 | 2026-04-14 | 20日新高 | 🟡趋势增强 | ✅ | 启动信号确认，趋势确立 |
 | 2026-04-22 | RSI 77.6 | ⚪高位整固 | ✅ | 历史分位~80%，成交量收缩，RSI>70持续但未加速 |
 | 2026-04-30 | RSI 79.8 | ⚪高位整固 | ✅ | RSI维持高位，赔率收敛至1.3 |
@@ -217,8 +219,8 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 ```python
 CHECKLIST = {
-    "rsi_enough_samples":    len(closes) >= 20,    # RSI最少20根（满足Wilder平滑最小样本）
-    "macd_enough_samples":   len(closes) >= 35,    # MACD最少34+1根
+    "rsi_enough_samples":    len(closes) >= 20,    # RSI最少20根（满足Wilder平滑最小样本要求）
+    "macd_enough_samples":  len(closes) >= 35,    # MACD最少35根（EMA12+EMA26+signal共35根有效输出）
     "new_high_20d_enough":   len(closes) >= 35,    # 20日新高判断最少35根
     "data_not_stale":        (today - latest_kline_date).days < 2,  # 数据延迟<2天
     "volume_ratio_valid":    volume_ratio is not None and volume_ratio > 0,
