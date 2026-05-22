@@ -85,7 +85,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
         return "❌数据不足", "指标计算样本不足，无法生成信号"
 
     # ══ 阶段1：机会流失判断（风控优先） ══════════════════════
-    # 三条件同时满足 → 最优先输出，优先于所有做多信号
+    # 三条件同时满足 → 最优先输出，优先于所有强势/上行动能信号
     macd_dead = macd_death_cross(etf["macd"], etf["prev_macd"])
     rsi_low   = etf["rsi"] < 40
     ma_bear   = not etf.get("ma_bullish", False)
@@ -112,19 +112,23 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
         and etf.get("volume_ratio", 1.0) < 1.2
     )
     if overbought_sustained:
-        return "⚪高位整固", "高位缩量整固，持有不追，回撤风险积累"
+        return "⚪高位整固", "高位风险提示，不宜追高"
 
-    # ══ 阶段4：动量加速（持有但不再追加） ════════════════════
+    # ══ 阶段4：强信号拦截（数据延迟时禁止触发） ══════════════════
+    # 延迟 ≥ 2 天时，禁止触发 🟢动量加速 / 🟡趋势增强 / 🔴启动观察
+    if delay_flag:
+        return None, "⚠️数据延迟，最新信号仅供参考"
+
+    # ══ 阶段5：动量加速（持有但不再追加） ════════════════════
     # 判断：RSI在65-75区间（从55上穿70的简化）+ 赔率>1.5 + 均线多头
     rsi_accelerating = 65 <= etf["rsi"] <= 75
     reward_high      = etf.get("reward_ratio", 0) > 1.5
     ma_aligned       = etf.get("ma_bullish", False)
 
     if rsi_accelerating and reward_high and ma_aligned:
-        # 延迟数据下禁止触发动量加速，仅保留历史状态参考
-        return "🟢动量加速", "持有为主，不追加仓位"
+        return "🟢动量加速", "高位风险提示，趋势延续但不宜追高"
 
-    # ══ 阶段5：趋势确认（从启动升级为确认） ═════════════════
+    # ══ 阶段6：趋势确认（从启动升级为确认） ═════════════════
     # 已在启动观察状态，出现20日新高或RSI上穿60
     rsi_crossed_60  = rsi_cross_above(etf["rsi"], etf.get("prev_rsi", 0), 60)
     hit_new_high_20 = etf.get("new_high_20d", False)
@@ -132,17 +136,15 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     if hit_new_high_20 or rsi_crossed_60:
         # 前置条件：已有启动迹象（简化：用5日相对强度>0代理）
         if etf.get("rel_strength", {}).get("5日", 0) > 0:
-            # 延迟数据下禁止触发趋势增强，仅保留历史状态参考
-            return "🟡趋势增强", "趋势确立，可关注但仍不追高"
+            return "🟡趋势增强", "趋势确立，关注延续性"
 
-    # ══ 阶段6：启动观察（最早做多信号） ═════════════════════
+    # ══ 阶段7：启动观察（最早强势/上行动能信号） ═════════════
     # MACD金叉 + RSI>50 + 成交量放大>1.2倍
     macd_golden     = macd_golden_cross(etf["macd"], etf["prev_macd"])
     rsi_above_50    = etf["rsi"] > 50
     vol_expanding   = etf.get("volume_ratio", 0) > 1.2
 
     if macd_golden and rsi_above_50 and vol_expanding:
-        # 延迟数据下禁止触发启动观察，仅保留历史状态参考
         if etf.get("new_high_20d", False):
             return "🟡趋势增强", "启动+20日新高，趋势已确认"
         return "🔴启动观察", "关注不追，等确认信号出现"
@@ -168,9 +170,9 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 |--------|------|---------|---------|-----------|
 | P0（风控） | 🟤机会流失 | MACD死叉 **AND** RSI<40 **AND** 均线破位 | 趋势失效提示，建议降权观察 | 正常触发（优先） |
 | P0（风控） | 🟤过热回落 | RSI从70+快速回落至40-55 **AND** 成交量萎缩 **AND** MACD<0 | 注意反转风险 | 正常触发 |
-| P1 | ⚪高位整固 | 历史分位>85% **AND** 成交量缩<1.2倍 | 持有不追 | 正常触发 |
-| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 持有为主，不追加 | 禁止触发 |
-| P3 | 🟡趋势增强 | 启动观察 **AND** (20日新高 **OR** RSI上穿60) | 可关注但不追高 | 禁止触发 |
+| P1 | ⚪高位整固 | 历史分位>85% **AND** 成交量缩<1.2倍 | 高位风险提示，不宜追高 | 正常触发 |
+| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 高位风险提示，趋势延续但不宜追高 | 禁止触发 |
+| P3 | 🟡趋势增强 | 启动观察 **AND** (20日新高 **OR** RSI上穿60) | 趋势确立，关注延续性 | 禁止触发（延迟时阻断，不生成新标签） |
 | P4 | 🔴启动观察 | MACD金叉 **AND** RSI>50 **AND** 成交量>1.2倍 | 关注等确认 | 禁止触发 |
 | P5 | 🔵相对走弱 | RSI<40 **AND** MACD死叉 **AND** 均线空头 | 关注轮出 | 正常触发 |
 | P6 | 🟡相对强势 | 5日相对强度>2% | 短线关注 | 正常触发 |
@@ -182,8 +184,8 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 ```
 1. 数据有效性  > 所有信号（数据不合格直接跳过）
-2. 机会流失/过热回落  > 所有做多信号（风控优先）
-3. MACD金叉    > 20日新高（MACD金叉是最早做多信号）
+2. 机会流失/过热回落  > 所有强势/上行动能信号（风控优先）
+3. MACD金叉    > 20日新高（MACD金叉是最早强势/上行动能信号）
 4. 相对强弱趋势 > 绝对强弱（轮动看相对强度，不是单纯涨跌）
 5. 成交量确认  > 价格突破（无量突破需谨慎）
 ```
