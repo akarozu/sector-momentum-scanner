@@ -91,7 +91,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     ma_bear   = not etf.get("ma_bullish", False)
 
     if all_bearish_signals(macd_dead, rsi_low, ma_bear):
-        return "🟤机会流失", "三条件同现：MACD死叉+RSI<40+均线破位，建议减仓/离场"
+        return "🟤机会流失", "三条件同现：MACD死叉+RSI<40+均线破位，趋势失效提示，建议降权观察"
 
     # ══ 阶段2：过热回落（从高位快速反转向下） ════════════════
     # 判断：RSI从70+快速回落至40-50区间 + 成交量萎缩 + MACD转负
@@ -121,8 +121,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     ma_aligned       = etf.get("ma_bullish", False)
 
     if rsi_accelerating and reward_high and ma_aligned:
-        if delay_flag:
-            return "🟢动量加速（延迟⚠️）", "数据延迟，信号仅供参考"
+        # 延迟数据下禁止触发动量加速，仅保留历史状态参考
         return "🟢动量加速", "持有为主，不追加仓位"
 
     # ══ 阶段5：趋势确认（从启动升级为确认） ═════════════════
@@ -130,11 +129,10 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     rsi_crossed_60  = rsi_cross_above(etf["rsi"], etf.get("prev_rsi", 0), 60)
     hit_new_high_20 = etf.get("new_high_20d", False)
 
-    if hit_new_high_20d or rsi_crossed_60:
+    if hit_new_high_20 or rsi_crossed_60:
         # 前置条件：已有启动迹象（简化：用5日相对强度>0代理）
         if etf.get("rel_strength", {}).get("5日", 0) > 0:
-            if delay_flag:
-                return "🟡趋势增强（延迟⚠️）", "趋势成立但数据延迟，谨慎确认"
+            # 延迟数据下禁止触发趋势增强，仅保留历史状态参考
             return "🟡趋势增强", "趋势确立，可关注但仍不追高"
 
     # ══ 阶段6：启动观察（最早做多信号） ═════════════════════
@@ -144,9 +142,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     vol_expanding   = etf.get("volume_ratio", 0) > 1.2
 
     if macd_golden and rsi_above_50 and vol_expanding:
-        if delay_flag:
-            # 数据延迟：降级为观察，不触发启动
-            return "🔴启动观察（延迟⚠️）", "MACD金叉成立但数据延迟，等确认后再操作"
+        # 延迟数据下禁止触发启动观察，仅保留历史状态参考
         if etf.get("new_high_20d", False):
             return "🟡趋势增强", "启动+20日新高，趋势已确认"
         return "🔴启动观察", "关注不追，等确认信号出现"
@@ -170,12 +166,12 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 | 优先级 | 信号 | 触发条件 | 输出动作 | 延迟时处理 |
 |--------|------|---------|---------|-----------|
-| P0（风控） | 🟤机会流失 | MACD死叉 **AND** RSI<40 **AND** 均线破位 | 减仓/离场提醒 | 正常触发（优先） |
+| P0（风控） | 🟤机会流失 | MACD死叉 **AND** RSI<40 **AND** 均线破位 | 趋势失效提示，建议降权观察 | 正常触发（优先） |
 | P0（风控） | 🟤过热回落 | RSI从70+快速回落至40-55 **AND** 成交量萎缩 **AND** MACD<0 | 注意反转风险 | 正常触发 |
 | P1 | ⚪高位整固 | 历史分位>85% **AND** 成交量缩<1.2倍 | 持有不追 | 正常触发 |
-| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 持有为主，不追加 | 降级为⚠️ |
-| P3 | 🟡趋势增强 | 启动观察 **AND** (20日新高 **OR** RSI上穿60) | 可关注但不追高 | 降级为⚠️ |
-| P4 | 🔴启动观察 | MACD金叉 **AND** RSI>50 **AND** 成交量>1.2倍 | 关注等确认 | 降级为⚠️ |
+| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 持有为主，不追加 | 禁止触发 |
+| P3 | 🟡趋势增强 | 启动观察 **AND** (20日新高 **OR** RSI上穿60) | 可关注但不追高 | 禁止触发 |
+| P4 | 🔴启动观察 | MACD金叉 **AND** RSI>50 **AND** 成交量>1.2倍 | 关注等确认 | 禁止触发 |
 | P5 | 🔵相对走弱 | RSI<40 **AND** MACD死叉 **AND** 均线空头 | 关注轮出 | 正常触发 |
 | P6 | 🟡相对强势 | 5日相对强度>2% | 短线关注 | 正常触发 |
 | — | ⚪中性 | 不满足以上任何条件 | 无信号 | — |
@@ -202,8 +198,8 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 |------|---------|------------|--------|------|
 | 2026-03-31 | 阶段新低 | — | — | 尚未满足启动条件 |
 | 2026-04-01 | 修复中 | 🔵超跌反弹观察 | ✅ | RSI从27.5升至36.1，成交量未明显放大 |
-| **2026-04-08** | **MACD金叉** | **🔴启动观察** | **✅** | MACD柱+0.0029（由负转正），RSI 43.7>50需等下一日确认；4/8当日不触发完整启动（金叉单条件），4/9或4/10 RSI>50时触发 |
-| 2026-04-09 | RSI>50确认 | 🔴启动观察→🟡趋势增强 | ✅ | RSI上穿50，成交量放大1.3倍，满足完整启动条件 |
+| **2026-04-08** | **MACD金叉（预警）** | **🔴预警** | **✅** | MACD柱+0.0029（由负转正），RSI 43.7<50，尚不满足启动条件（启动需RSI>50）；本次输出为MACD金叉预警，关注RSI是否随后站上50 |
+| 2026-04-09 | RSI>50确认 | 🟡趋势增强 | ✅ | RSI上穿50，成交量放大1.3倍，满足完整启动条件后升级为趋势增强 |
 | 2026-04-14 | 20日新高 | 🟡趋势增强 | ✅ | 启动信号确认，趋势确立 |
 | 2026-04-22 | RSI 77.6 | ⚪高位整固 | ✅ | 历史分位~80%，成交量收缩，RSI>70持续但未加速 |
 | 2026-04-30 | RSI 79.8 | ⚪高位整固 | ✅ | RSI维持高位，赔率收敛至1.3 |
@@ -221,7 +217,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 ```python
 CHECKLIST = {
-    "rsi_enough_samples":    len(closes) >= 20,    # RSI最少14+1根
+    "rsi_enough_samples":    len(closes) >= 20,    # RSI最少20根（满足Wilder平滑最小样本）
     "macd_enough_samples":   len(closes) >= 35,    # MACD最少34+1根
     "new_high_20d_enough":   len(closes) >= 35,    # 20日新高判断最少35根
     "data_not_stale":        (today - latest_kline_date).days < 2,  # 数据延迟<2天
