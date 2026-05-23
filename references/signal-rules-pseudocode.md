@@ -73,7 +73,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     参数：
         etf        — ETF数据字典
         hs300      — 沪深300基准数据
-        delay_flag — True=数据延迟≥2天，禁止触发启动/加速信号
+        delay_flag — True=数据延迟≥2天，禁止触发 🔴启动观察/🟡趋势增强/🟢动量加速信号
 
     返回：
         (信号标签, 动作含义)  或  (None, None) 表示无明确信号
@@ -156,7 +156,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
     # ══ 阶段8：相对强势（短线超额收益） ═════════════════════
     if etf.get("rel_strength", {}).get("5日", 0) > 2.0:
-        return "🟡相对强势", "短线超额收益明显，但不等同于买入信号"
+        return "🟡相对强势", "短线超额收益明显，但不构成操作依据"
 
     # ══ 阶段9：中性/无信号 ════════════════════════════════════
     return None, None
@@ -212,7 +212,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 **关键验证点：**
 - MACD金叉（4/8）比20日新高（4/14）提前6天 → 验证"MACD金叉优先级高于20日新高"
-- 半导体RSI长期维持55-86，从未触发"过热回落"或"机会流失" → 验证"RSI>70不等于卖点"原则
+- 半导体RSI长期维持55-86，从未触发"过热回落"或"机会流失" → 验证"RSI>70不等于高位反转依据"原则
 - 均线多头排列从4月中旬持续至5月中旬 → 趋势延续信号比RSI超买更有参考价值
 
 ---
