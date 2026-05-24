@@ -314,10 +314,22 @@ def calc_crowding_score(closes, volumes, period=10):
     if len(closes) < period + 1 or len(volumes) < period + 1:
         return None
 
-    # ① 短期涨幅分位（近10日涨幅在近90日中的分位）
+    # ① 短期涨幅分位（近10日涨幅在近90日滚动10日收益率分布中的分位）
+    # short_return：最近10日收益率
     short_return = (closes[-1] / closes[-period] - 1) * 100
-    # 计算短期涨幅的历史分位
-    return_percentile = sum(1 for c in closes[-90:] if c < closes[-1]) / min(len(closes), 90) * 100
+    # 计算近90日所有10日滚动收益率样本，再求 short_return 的历史分位
+    window = min(len(closes) - period, 90)
+    if window < period:
+        return_percentile = 50
+    else:
+        rolling_returns = [
+            (closes[i + period] / closes[i] - 1) * 100
+            for i in range(window)
+        ]
+        if rolling_returns:
+            return_percentile = sum(1 for r in rolling_returns if r < short_return) / len(rolling_returns) * 100
+        else:
+            return_percentile = 50
     # ② 成交额分位（近10日均量在近90日中的分位）
     avg_vol_10 = sum(volumes[-10:]) / 10
     vol_percentile = sum(1 for v in volumes[-90:] if v < avg_vol_10) / min(len(volumes), 90) * 100
@@ -695,6 +707,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 10. **输出排名**：综合排名、5日强度排名、排名变化（含加速/稳定/下滑标注）。
 11. **持仓关联**：读取记忆中的用户持仓数据，单独标记持仓板块的相对强弱、扩散度、拥挤度与排名变化。
 12. **合规声明**：输出末尾声明仅供参考，不构成投资建议。
+13. **提交报告前检查**：每次整改报告提交前，确认正文中包含项目经理 mention 链接 `@[项目经理](mention://agent/76a52862-fb63-4c11-9c5b-dac387451735)`，纯文字复审请求不触发通知，视为未提交。
 
 ---
 
@@ -727,8 +740,9 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 | 19 | 轮动强度排名变化（§4.7） | 有完整公式、输出标注（加速/稳定/下滑） |
 | 20 | 拥挤度/过热检测（§4.8） | 有完整公式、过热状态输出规则、动作含义说明 |
 | 21 | 持续性验证窗口（§4.9） | 有确认窗口逻辑、置信度分级、输出格式 |
-| 22 | 拥挤度/过热不参与综合得分的说明 | §五.2 注明确认 |
-| 23 | 延迟≥2天禁止触发动量加速/趋势增强/启动观察 | §三§六双重覆盖 |
+|| 22 | 拥挤度/过热不参与综合得分的说明 | §五.2 注明确认 |
+|| 23 | 延迟≥2天禁止触发动量加速/趋势增强/启动观察 | §三§六双重覆盖 |
+|| 24 | **整改报告 mention 格式要求**：每次整改报告末尾必须包含项目经理 mention 链接 `@[项目经理](mention://agent/76a52862-fb63-4c11-9c5b-dac387451735)`，单独纯文字请求不触发通知，视为未提交 | §九步骤13 |
 
 ### 10.2 交付检查命令
 
