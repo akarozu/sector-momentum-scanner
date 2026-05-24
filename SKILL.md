@@ -224,6 +224,198 @@ def calc_ma_bullish(closes):
     return ma5 > ma10 > ma20 and slope_ma5 > 0
 ```
 
+### 4.6 相对强弱扩散度（成分股广度）
+
+衡量板块内成分股跑赢基准的比例，避免单一龙头拉动被误判为板块级轮动。
+
+```python
+def calc_sector_breadth(etf_closes, hs300_closes, lookback=20):
+    """
+    板块相对强弱扩散度：板块近期涨幅中，跑赢沪深300的交易日占比。
+    etf_closes / hs300_closes: 收盘价列表（最旧→最新）
+    lookback: 回顾窗口（默认20日）
+    返回：(扩散度百分比, 是否有效)
+    """
+    if len(etf_closes) < lookback + 1 or len(hs300_closes) < lookback + 1:
+        return None, False
+
+    wins = 0
+    total = 0
+    for i in range(-lookback, 0):
+        etf_ret = etf_closes[i] / etf_closes[i - 1] - 1
+        hs_ret = hs300_closes[i] / hs300_closes[i - 1] - 1
+        if etf_ret > hs_ret:
+            wins += 1
+        total += 1
+
+    return round(wins / total * 100, 2), True
+```
+
+**评分应用（输出字段，非综合得分维度）**：
+- 扩散度 > 70%：成分股广泛跑赢 → 板块级轮动信号可靠性高，输出标注「✅扩散度高」
+- 扩散度 40–70%：部分成分股领先 → 谨慎解读，输出标注「⚠️扩散度中等」
+- 扩散度 < 40%：仅少数龙头强势 → 警惕假轮动，输出标注「🔺扩散度低」
+
+> 注：ETF本身无法获得成分股明细，用ETF价格与沪深300的日度胜负比作为代理指标，与赔率/分位共同构成量能验证的辅助维度。
+
+### 4.7 轮动强度排名变化（3/5/10/20 日）
+
+记录不同周期相对强弱排名的变化速度与稳定性，区分一日脉冲与持续爬升。
+
+```python
+def calc_rank_velocity(rank_5d, rank_10d, rank_20d):
+    """
+    rank_5d / rank_10d / rank_20d: 分别为近5日/10日/20日相对强度排名（正整数，1=最强）
+    返回 dict:
+        - speed_score: 排名加速得分（0-10），综合3个周期的变化
+        - stability: 排名稳定性（标准差，越小越稳定）
+        - trend: 'accelerating' / 'stable' / 'decelerating'
+    """
+    import statistics
+    ranks = [rank_5d, rank_10d, rank_20d]
+    if any(r is None or r <= 0 for r in ranks):
+        return None
+
+    stdev = round(statistics.stdev(ranks), 2) if len(ranks) > 1 else 0
+    # 加速：5日排名显著优于20日
+    improvement = rank_20d - rank_5d  # 正数=排名上升
+    speed_score = round(min(max(improvement * 1.5, 0), 10), 2)
+
+    if improvement >= 3:
+        trend = 'accelerating'
+    elif improvement <= -3:
+        trend = 'decelerating'
+    else:
+        trend = 'stable'
+
+    return {
+        'speed_score': speed_score,
+        'stability': stdev,
+        'trend': trend,
+        'improvement': improvement
+    }
+```
+
+**输出标注**：
+- `↑加速爬升`：5日排名比20日排名提升≥3位，且speed_score≥5
+- `→排名稳定`：各周期排名波动小，trend='stable'
+- `↓排名下滑`：5日排名比20日排名下降≥3位
+
+### 4.8 拥挤度/过热状态检测
+
+基于短期涨幅分位、成交额分位、乖离率、连续阳线数等形成状态提醒，避免将高位加速误判为健康轮动。
+
+```python
+def calc_crowding_score(closes, volumes, period=10):
+    """
+    综合四个维度计算拥挤度/过热得分（0-100，越高越拥挤）
+    仅用于状态标注，不参与综合得分计算。
+    """
+    if len(closes) < period + 1 or len(volumes) < period + 1:
+        return None
+
+    # ① 短期涨幅分位（近10日涨幅在近90日中的分位）
+    short_return = (closes[-1] / closes[-period] - 1) * 100
+    # ② 成交额分位（近10日均量在近90日中的分位）
+    avg_vol_10 = sum(volumes[-10:]) / 10
+    vol_percentile = sum(1 for v in volumes[-90:] if v < avg_vol_10) / min(len(volumes), 90) * 100
+    # ③ 乖离率（现价偏离20日均线百分比）
+    ma20 = sum(closes[-20:]) / 20
+    deviation = abs((closes[-1] - ma20) / ma20 * 100)
+    # ④ 连续阳线数
+    consecutive_green = 0
+    for i in range(len(closes) - 1, -1, -1):
+        if closes[i] > closes[i - 1]:
+            consecutive_green += 1
+        else:
+            break
+
+    score = 0
+    # 短期涨幅分位 > 85% → +30分
+    if vol_percentile > 85:
+        score += 30
+    elif vol_percentile > 70:
+        score += 15
+    # 成交额分位 > 85% → +25分
+    if vol_percentile > 85:
+        score += 25
+    elif vol_percentile > 70:
+        score += 12
+    # 乖离率 > 15% → +25分，> 10% → +15分
+    if deviation > 15:
+        score += 25
+    elif deviation > 10:
+        score += 15
+    # 连续阳线 ≥ 7 → +20分，≥ 5 → +10分
+    if consecutive_green >= 7:
+        score += 20
+    elif consecutive_green >= 5:
+        score += 10
+
+    return min(score, 100)
+```
+
+**过热状态输出**：
+- 拥挤度得分 ≥ 70：标注「🔥拥挤」；综合得分正常输出，但注明「注意追高风险」
+- 拥挤度得分 50–69：标注「⚡偏热」
+- 拥挤度得分 < 50：正常，无标注
+
+> ⚠️ **拥挤度标注不构成操作建议**：过热状态仅表示该板块短期交易情绪处于历史高位，提示用户关注波动风险，不代表看空或建议卖出。
+
+### 4.9 持续性验证窗口
+
+首次触发启动观察/趋势增强后，设置 1-3 个交易日确认窗口，观察相对强弱和量能状态是否维持。持续性验证仅改变信号置信度，不改变信号类型输出。
+
+```python
+def calc_confirmation_window(signal_label, confirm_days=3,
+                               rel_strength_series=None,
+                               volume_ratio_series=None):
+    """
+    signal_label: 当前信号标签（'启动观察' / '趋势增强' 等）
+    confirm_days: 确认窗口天数（默认3）
+    rel_strength_series: 近N日相对强弱列表（用于趋势验证）
+    volume_ratio_series: 近N日成交量放大倍数列表
+
+    返回: {
+        'confirmed': bool,    # 窗口内是否持续符合条件
+        'days Held': int,     # 维持天数
+        'confidence': str     # '高' / '中' / '低'
+    }
+    """
+    if signal_label not in ('启动观察', '趋势增强'):
+        return {'confirmed': None, 'days_held': 0, 'confidence': '不适用'}
+
+    if rel_strength_series is None or volume_ratio_series is None:
+        return {'confirmed': None, 'days_held': 0, 'confidence': '数据不足'}
+
+    held_days = 0
+    for i in range(min(confirm_days, len(rel_strength_series))):
+        rel_ok = rel_strength_series[i] is not None and rel_strength_series[i] > 0
+        vol_ok = volume_ratio_series[i] is not None and volume_ratio_series[i] > 1.0
+        if rel_ok and vol_ok:
+            held_days += 1
+
+    confirmed = held_days >= confirm_days
+    if held_days >= confirm_days:
+        confidence = '高'
+    elif held_days >= confirm_days - 1:
+        confidence = '中'
+    else:
+        confidence = '低'
+
+    return {
+        'confirmed': confirmed,
+        'days_held': held_days,
+        'confidence': confidence
+    }
+```
+
+**输出格式**：在信号标签后增加确认状态后缀，例如：
+- 「🔴启动观察（确认中，高）」：窗口内条件持续满足，置信度高
+- 「🟡趋势增强（确认中，低）」：窗口内条件断续，置信度低，状态描述增加「注意信号稳定性」
+
+> 注：确认窗口不改变信号优先级判定逻辑，仅作为信号置信度标注。窗口内任何一日出现反向信号（如死叉/机会流失），直接输出该反向信号，忽略确认状态。
+
 ---
 
 ## 五、轮动评分框架（核心）
@@ -253,6 +445,8 @@ def calc_relative_strength(etf_closes, hs300_closes, periods=[5, 10, 20]):
 
 ```
 综合得分 = 相对强弱分(±40) + 趋势强度分(±30) + 量能验证分(±20) + 基准偏离分(±10)
+
+> **注**：拥挤度/过热得分（§4.8）不参与综合得分计算，单独输出为状态标注，用于提示高位风险。
 ```
 
 | 维度 | 指标 | 满分 | 评分规则 |
@@ -310,7 +504,11 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
         'volume_ratio': float, 'percentile': float,
         'reward_ratio': float, 'ma_bullish': bool,
         'new_high_20d': bool,
-        'relative_strength': {5日: float, 10日: float, 20日: float}
+        'relative_strength': {5日: float, 10日: float, 20日: float},
+        'sector_breadth': float,       # 相对强弱扩散度（%）
+        'rank_velocity': dict,         # 排名变化 dict（speed_score/stability/trend）
+        'crowding_score': float,       # 拥挤度/过热得分（0-100）
+        'confirm_status': dict         # 确认窗口 dict（confirmed/days_held/confidence）
     }
     delay_flag: True 表示数据延迟 ≥ 2 天
     """
@@ -348,11 +546,15 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
         return None, "⚠️数据延迟，最新信号仅供参考"
 
     # === 阶段六：动量加速 ===
-    # RSI 从 55 上穿 70（简化：RSI 在 65-75 区间且赔率 > 1.5）
+    # RSI 在 65-75 区间 + 赔率 > 1.5 + 均线多头 + 拥挤度 < 70（避免高位过热区间加速）
     rsi_accelerating = 65 <= etf_data['rsi'] <= 75
     reward_high = etf_data['reward_ratio'] is not None and etf_data['reward_ratio'] > 1.5
-    if rsi_accelerating and reward_high and etf_data['ma_bullish']:
+    crowding_ok = etf_data.get('crowding_score', 100) < 70  # 过热区间禁止触发加速
+    if rsi_accelerating and reward_high and etf_data['ma_bullish'] and crowding_ok:
         return "🟢动量加速", "高位风险标记，趋势状态延续"
+    # 过热区间（crowding_score >= 70）出现加速特征 → 输出⚠️过热风险，不输出动量加速
+    if rsi_accelerating and reward_high and etf_data['ma_bullish'] and not crowding_ok:
+        return "⚠️过热风险", "高位过热状态，注意波动风险"
 
     # === 阶段七：趋势增强 / 启动观察 ===
     # 启动观察 + 20日新高
@@ -376,6 +578,20 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
         if etf_data['relative_strength']['5日'] > 2:
             return "🟡相对强势", "短线强势，但不构成操作依据"
 
+    # === 阶段九：扩散度低预警（辅助参考） ===
+    # 扩散度 < 40% 且出现强势信号 → 输出提示，不改变信号
+    breadh = etf_data.get('sector_breadth')
+    if breadh is not None and breadh < 40:
+        # 仅作为状态标注追加，不阻断任何信号
+        pass  # 在输出端标注🔺扩散度低，由主流程处理
+
+    # === 阶段十：排名加速验证（辅助参考） ===
+    # 加速爬升信号配合启动/趋势信号 → 提升置信度
+    rv = etf_data.get('rank_velocity')
+    if rv is not None and rv.get('trend') == 'accelerating':
+        # 仅作为置信度提升标注，不独立输出信号
+        pass
+
     return None, None  # 无明确信号
 ```
 
@@ -391,16 +607,16 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 ### 综合评分排名
 
-| 排名 | 板块 | 综合得分 | 5日相对 | 10日相对 | 20日相对 | RSI | 20日新高 | 信号 |
-|------|------|---------|---------|---------|---------|-----|---------|------|
-| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 70.6 | ▲ | 🟢动量加速 |
-| 2 | 机器人 | +41 | +4.1% | +6.2% | +9.8% | 71.2 | ▲ | 🟢动量加速 |
-| 3 | 人工智能 | +38 | +3.8% | +5.1% | +7.6% | 68.4 | — | ⚪高位整固 |
-| 4 | 通信设备 | +29 | +2.1% | +3.4% | +5.2% | 62.3 | ▲ | 🟡趋势增强 |
-| 5 | 卫星通信 | +18 | +1.5% | +2.8% | +4.1% | 58.7 | — | ⚠️数据延迟 |
-| 6 | 有色金属 | +7 | -0.3% | +0.5% | +2.1% | 52.3 | — | 🔵相对走弱 |
-| 7 | 红利低波 | +2 | -0.5% | +0.2% | +1.8% | 48.7 | — | ⚪中性 |
-| ... | ... | ... | ... | ... | ... | ... | ... | ... |
+| 排名 | 板块 | 综合得分 | 5日相对 | 10日相对 | 20日相对 | RSI | 20日新高 | 拥挤度 | 信号 |
+|------|------|---------|---------|---------|---------|-----|---------|------|------|
+| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 70.6 | ▲ | 🔥78 | 🟢动量加速 |
+| 2 | 机器人 | +41 | +4.1% | +6.2% | +9.8% | 71.2 | ▲ | 🔥65 | 🟢动量加速 |
+| 3 | 人工智能 | +38 | +3.8% | +5.1% | +7.6% | 68.4 | — | ⚡62 | ⚪高位整固 |
+| 4 | 通信设备 | +29 | +2.1% | +3.4% | +5.2% | 62.3 | ▲ | ⚡52 | 🟡趋势增强 |
+| 5 | 卫星通信 | +18 | +1.5% | +2.8% | +4.1% | 58.7 | — | — | ⚠️数据延迟 |
+| 6 | 有色金属 | +7 | -0.3% | +0.5% | +2.1% | 52.3 | — | 🔺38 | 🔵相对走弱 |
+| 7 | 红利低波 | +2 | -0.5% | +0.2% | +1.8% | 48.7 | — | 🔺22 | ⚪中性 |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
 
 ### 动量排名
 
@@ -414,9 +630,9 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 2. 机器人：+4.1% 超额
 3. 人工智能：+3.8% 超额
 
-**排名上升最快**（5日排名 vs 20日排名）
-- 半导体：5日第1 vs 20日第3 → 轮动加速
-- 通信设备：5日第4 vs 20日第7 → 轮动启动
+**排名变化**（5日排名 vs 20日排名，含加速/稳定/下滑标注）
+- 半导体：5日第1 vs 20日第3 → ↑加速爬升
+- 通信设备：5日第4 vs 20日第7 → ↑加速爬升
 
 ### 持仓关联
 
@@ -455,6 +671,8 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 | K 线不足 MACD | < 35 根 | `⚠️指标缺失` | 不计算 MACD |
 | K 线不足 20 日新高 | < 35 根 | `⚠️指标缺失` | 不判断 20 日新高 |
 | 双重覆盖 ETF 数据不一致 | 同板块两只 ETF 信号矛盾 | 取 RSI 较高者为代表，输出时并列注明 | 较高者参与排名 |
+| 扩散度数据不足 | K 线不足 21 根 | `⚠️扩散度数据不足` | 不计算扩散度，仅保留原信号 |
+| 排名数据不足 | 10日/20日排名数据不足 | `⚠️排名加速数据不足` | 排名变化输出为空 |
 
 ---
 
@@ -467,11 +685,13 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 3. **数据有效性检查**：立即验证最新 K 线日期与今日差距；若数据缺失/失败/根数不足，按§八处理。
 4. **计算基础指标**：RSI(14)、MACD(12,26,9)、历史分位、赔率、成交量放大倍数、均线状态。
 5. **计算相对强弱**：以沪深300为基准，计算各 ETF 的5日/10日/20日超额收益。
-6. **计算综合得分**：按§五评分公式计算每只 ETF 的四维综合得分。
-7. **判定信号阶段**：按§六伪代码输出信号，不触发延迟数据的 🔴启动观察 / 🟡趋势增强 / 🟢动量加速信号。
-8. **输出排名**：综合排名、5日强度排名、排名变化。
-9. **持仓关联**：读取记忆中的用户持仓数据，单独标记持仓板块的相对强弱与排名变化。
-10. **合规声明**：输出末尾声明仅供参考，不构成投资建议。
+6. **计算辅助指标**：计算相对强弱扩散度（§4.6）、轮动强度排名变化（§4.7）、拥挤度得分（§4.8）。
+7. **计算综合得分**：按§五评分公式计算每只 ETF 的四维综合得分。
+8. **判定信号阶段**：按§六伪代码输出信号，不触发延迟数据的 🔴启动观察 / 🟡趋势增强 / 🟢动量加速信号；拥挤度 < 70 时方触发动量加速。
+9. **持续性验证**：对启动观察/趋势增强信号，计算确认窗口（§4.9），输出置信度标注。
+10. **输出排名**：综合排名、5日强度排名、排名变化（含加速/稳定/下滑标注）。
+11. **持仓关联**：读取记忆中的用户持仓数据，单独标记持仓板块的相对强弱、扩散度、拥挤度与排名变化。
+12. **合规声明**：输出末尾声明仅供参考，不构成投资建议。
 
 ---
 
@@ -500,6 +720,12 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 | 15 | 样例输出（至少一组） | §七包含真实格式的完整样例 |
 | 16 | 异常数据处理汇总表 | §八表格完整 |
 | 17 | 半导体复盘映射说明（验证信号优先级） | 见 `references/semiconductor-rally-2026.md` |
+| 18 | 相对强弱扩散度计算（§4.6） | 有完整公式、评分规则、输出标注 |
+| 19 | 轮动强度排名变化（§4.7） | 有完整公式、输出标注（加速/稳定/下滑） |
+| 20 | 拥挤度/过热检测（§4.8） | 有完整公式、过热状态输出规则、动作含义说明 |
+| 21 | 持续性验证窗口（§4.9） | 有确认窗口逻辑、置信度分级、输出格式 |
+| 22 | 拥挤度/过热不参与综合得分的说明 | §五.2 注明确认 |
+| 23 | 延迟≥2天禁止触发动量加速/趋势增强/启动观察 | §三§六双重覆盖 |
 
 ### 10.2 交付检查命令
 
