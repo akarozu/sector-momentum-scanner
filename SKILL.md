@@ -1,6 +1,6 @@
 ---
 name: sector-momentum-scanner
-description: A股主流板块ETF动量扫描 — 捕捉板块轮动信号，识别启动/加速/衰竭/机会流失阶段，辅助判断持仓板块轮动节奏。输出为关注/观察/状态提醒，不构成任何买卖指令。
+description: A股主流板块ETF动量扫描 — 捕捉板块轮动信号，识别启动/加速/衰竭/机会流失阶段，辅助判断持仓板块轮动节奏。输出为关注/观察/状态提醒，不构成任何买卖指令。关联仓库：https://github.com/akarozu/sector-momentum-scanner
 ---
 
 # 板块动量扫描仪 v2.0
