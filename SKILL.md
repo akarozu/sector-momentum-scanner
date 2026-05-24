@@ -318,12 +318,14 @@ def calc_crowding_score(closes, volumes, period=10):
     # short_return：最近10日收益率
     short_return = (closes[-1] / closes[-period] - 1) * 100
     # 计算近90日所有10日滚动收益率样本，再求 short_return 的历史分位
-    window = min(len(closes) - period, 90)
+    # 先切出最近90日数据，在该窗口内滚动计算，避免从全量历史起点取样
+    recent_closes = closes[-90:] if len(closes) >= 90 else closes
+    window = len(recent_closes) - period
     if window < period:
         return_percentile = 50
     else:
         rolling_returns = [
-            (closes[i + period] / closes[i] - 1) * 100
+            (recent_closes[i + period] / recent_closes[i] - 1) * 100
             for i in range(window)
         ]
         if rolling_returns:
@@ -370,11 +372,11 @@ def calc_crowding_score(closes, volumes, period=10):
 ```
 
 **过热状态输出**：
-- 拥挤度得分 ≥ 70：标注「🔥拥挤」；综合得分正常输出，但注明「注意追高风险」
+- 拥挤度得分 ≥ 70：标注「🔥拥挤」；综合得分正常输出，但注明「短期交易情绪处于历史高位，波动风险需关注」
 - 拥挤度得分 50–69：标注「⚡偏热」
 - 拥挤度得分 < 50：正常，无标注
 
-> ⚠️ **拥挤度标注不构成操作建议**：过热状态仅表示该板块短期交易情绪处于历史高位，提示用户关注波动风险，不代表看空或建议卖出。
+> ⚠️ **拥挤度标注不构成操作建议**：过热状态仅客观反映该板块短期交易情绪处于历史高位，提示用户关注波动风险，不构成任何买卖建议。
 
 ### 4.9 持续性验证窗口
 
@@ -740,9 +742,9 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 | 19 | 轮动强度排名变化（§4.7） | 有完整公式、输出标注（加速/稳定/下滑） |
 | 20 | 拥挤度/过热检测（§4.8） | 有完整公式、过热状态输出规则、动作含义说明 |
 | 21 | 持续性验证窗口（§4.9） | 有确认窗口逻辑、置信度分级、输出格式 |
-|| 22 | 拥挤度/过热不参与综合得分的说明 | §五.2 注明确认 |
-|| 23 | 延迟≥2天禁止触发动量加速/趋势增强/启动观察 | §三§六双重覆盖 |
-|| 24 | **整改报告 mention 格式要求**：每次整改报告末尾必须包含项目经理 mention 链接 `@[项目经理](mention://agent/76a52862-fb63-4c11-9c5b-dac387451735)`，单独纯文字请求不触发通知，视为未提交 | §九步骤13 |
+| 22 | 拥挤度/过热不参与综合得分的说明 | §五.2 注明确认 |
+| 23 | 延迟≥2天禁止触发动量加速/趋势增强/启动观察 | §三§六双重覆盖 |
+| 24 | **整改报告 mention 格式要求**：每次整改报告末尾必须包含项目经理 mention 链接 `@[项目经理](mention://agent/76a52862-fb63-4c11-9c5b-dac387451735)`，单独纯文字请求不触发通知，视为未提交 | §九步骤13 |
 
 ### 10.2 交付检查命令
 
