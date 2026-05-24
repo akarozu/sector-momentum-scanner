@@ -316,15 +316,17 @@ def calc_crowding_score(closes, volumes, period=10):
 
     # ① 短期涨幅分位（近10日涨幅在近90日中的分位）
     short_return = (closes[-1] / closes[-period] - 1) * 100
+    # 计算短期涨幅的历史分位
+    return_percentile = sum(1 for c in closes[-90:] if c < closes[-1]) / min(len(closes), 90) * 100
     # ② 成交额分位（近10日均量在近90日中的分位）
     avg_vol_10 = sum(volumes[-10:]) / 10
     vol_percentile = sum(1 for v in volumes[-90:] if v < avg_vol_10) / min(len(volumes), 90) * 100
     # ③ 乖离率（现价偏离20日均线百分比）
     ma20 = sum(closes[-20:]) / 20
     deviation = abs((closes[-1] - ma20) / ma20 * 100)
-    # ④ 连续阳线数
+    # ④ 连续阳线数（避免 i==0 时与 closes[-1] 跨尾比较）
     consecutive_green = 0
-    for i in range(len(closes) - 1, -1, -1):
+    for i in range(len(closes) - 1, 0, -1):
         if closes[i] > closes[i - 1]:
             consecutive_green += 1
         else:
@@ -332,9 +334,9 @@ def calc_crowding_score(closes, volumes, period=10):
 
     score = 0
     # 短期涨幅分位 > 85% → +30分
-    if vol_percentile > 85:
+    if return_percentile > 85:
         score += 30
-    elif vol_percentile > 70:
+    elif return_percentile > 70:
         score += 15
     # 成交额分位 > 85% → +25分
     if vol_percentile > 85:
@@ -609,7 +611,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 | 排名 | 板块 | 综合得分 | 5日相对 | 10日相对 | 20日相对 | RSI | 20日新高 | 拥挤度 | 信号 |
 |------|------|---------|---------|---------|---------|-----|---------|------|------|
-| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 70.6 | ▲ | 🔥78 | 🟢动量加速 |
+| 1 | 半导体 | +52 | +6.3% | +8.7% | +12.1% | 70.6 | ▲ | 🔥78 | ⚠️过热风险 |
 | 2 | 机器人 | +41 | +4.1% | +6.2% | +9.8% | 71.2 | ▲ | 🔥65 | 🟢动量加速 |
 | 3 | 人工智能 | +38 | +3.8% | +5.1% | +7.6% | 68.4 | — | ⚡62 | ⚪高位整固 |
 | 4 | 通信设备 | +29 | +2.1% | +3.4% | +5.2% | 62.3 | ▲ | ⚡52 | 🟡趋势增强 |
@@ -621,7 +623,7 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 ### 动量排名
 
 **今日综合 Top 3**（按综合得分）
-1. 半导体（+52）：5日超额+6.3%，RSI 70.6，动量加速
+1. 半导体（+52）：5日超额+6.3%，RSI 70.6，🔥拥挤（过热风险）
 2. 机器人（+41）：5日超额+4.1%，RSI 71.2，均线多头
 3. 人工智能（+38）：5日超额+3.8%，RSI 68.4，高位整固
 
@@ -651,7 +653,8 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 - **🔴 启动观察**：无（数据均已延迟或信号不足）
 - **🟡 趋势增强**：通信设备（MACD 持续扩张，成交量放大 1.4 倍）
-- **🟢 动量加速**：半导体（RSI 70.6，赔率1.5:1，均线多头延续）
+- **🟢 动量加速**：机器人（RSI 71.2，赔率1.5:1，均线多头延续，拥挤度65）
+- **⚠️ 过热风险**：半导体（RSI 70.6，拥挤度78，🔥拥挤状态）
 - **⚠️ 数据延迟**：卫星通信（最新数据 2026-05-21，延迟1天）
 
 ---
