@@ -91,7 +91,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     ma_bear   = not etf.get("ma_bullish", False)
 
     if all_bearish_signals(macd_dead, rsi_low, ma_bear):
-        return "🟤机会流失", "三条件同现：MACD死叉+RSI<40+均线破位，趋势失效提示，建议降权观察"
+        return "🟤机会流失", "三条件同现：MACD死叉+RSI<40+均线破位，趋势失效提示，应标记为风险状态"
 
     # ══ 阶段2：过热回落（从高位快速反转向下） ════════════════
     # 判断：RSI从70+快速回落至40-50区间 + 成交量萎缩 + MACD转负
@@ -112,7 +112,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
         and etf.get("volume_ratio", 1.0) < 1.2
     )
     if overbought_sustained:
-        return "⚪高位整固", "高位风险提示，不宜追高"
+        return "⚪高位整固", "高位风险标记，RSI>70持续，回撤风险上升"
 
     # ══ 阶段4：强信号拦截（数据延迟时禁止触发） ══════════════════
     # 延迟 ≥ 2 天时，禁止触发 🟢动量加速 / 🟡趋势增强 / 🔴启动观察
@@ -126,7 +126,7 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     ma_aligned       = etf.get("ma_bullish", False)
 
     if rsi_accelerating and reward_high and ma_aligned:
-        return "🟢动量加速", "高位风险提示，趋势延续但不宜追高"
+        return "🟢动量加速", "高位风险标记，趋势状态延续"
 
     # ══ 阶段6：趋势确认（从启动升级为确认） ═════════════════
     # 已在启动观察状态，出现20日新高或RSI上穿60
@@ -147,16 +147,16 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
     if macd_golden and rsi_above_50 and vol_expanding:
         if etf.get("new_high_20d", False):
             return "🟡趋势增强", "启动+20日新高，趋势已确认"
-        return "🔴启动观察", "关注不追，等确认信号出现"
+        return "🔴启动观察", "MACD金叉+RSI>50，等待价格确认信号"
 
     # ══ 阶段7：相对走弱（持仓管理用） ═══════════════════════
     # 持仓板块出现：RSI<40 + MACD死叉 + 均线空头
     if rsi_low and macd_dead and ma_bear:
-        return "🔵相对走弱", "原有趋势告破，关注轮出机会"
+        return "🔵相对走弱", "原有趋势告破，轮动弱化状态"
 
     # ══ 阶段8：相对强势（短线超额收益） ═════════════════════
     if etf.get("rel_strength", {}).get("5日", 0) > 2.0:
-        return "🟡相对强势", "短线超额收益明显，但不构成操作依据"
+        return "🟡相对强势", "短线相对强势状态，但不构成任何操作依据"
 
     # ══ 阶段9：中性/无信号 ════════════════════════════════════
     return None, None
@@ -168,14 +168,14 @@ def determine_signal(etf: dict, hs300: dict, delay_flag: bool = False):
 
 | 优先级 | 信号 | 触发条件 | 输出动作 | 延迟时处理 |
 |--------|------|---------|---------|-----------|
-| P0（风控） | 🟤机会流失 | MACD死叉 **AND** RSI<40 **AND** 均线破位 | 趋势失效提示，建议降权观察 | 正常触发（优先） |
+| P0（风控） | 🟤机会流失 | MACD死叉 **AND** RSI<40 **AND** 均线破位 | 趋势失效提示，应标记为风险状态 | 正常触发（优先） |
 | P0（风控） | 🟤过热回落 | RSI从70+快速回落至40-55 **AND** 成交量萎缩 **AND** MACD<0 | 注意反转风险 | 正常触发 |
-| P1 | ⚪高位整固 | 历史分位>85% **AND** 成交量缩<1.2倍 | 高位风险提示，不宜追高 | 正常触发 |
-| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 高位风险提示，趋势延续但不宜追高 | 禁止触发 |
+| P1 | ⚪高位整固 | 历史分位>85% **AND** 成交量缩<1.2倍 | 高位风险标记，RSI>70持续，回撤风险上升 | 正常触发 |
+| P2 | 🟢动量加速 | RSI 65-75 **AND** 赔率>1.5 **AND** 均线多头 | 高位风险标记，趋势状态延续 | 禁止触发 |
 | P3 | 🟡趋势增强 | 启动观察 **AND** (20日新高 **OR** RSI上穿60) | 趋势确立，关注延续性 | 禁止触发（延迟时阻断，不生成新标签） |
-| P4 | 🔴启动观察 | MACD金叉 **AND** RSI>50 **AND** 成交量>1.2倍 | 关注等确认 | 禁止触发 |
-| P5 | 🔵相对走弱 | RSI<40 **AND** MACD死叉 **AND** 均线空头 | 关注轮出 | 正常触发 |
-| P6 | 🟡相对强势 | 5日相对强度>2% | 短线关注 | 正常触发 |
+| P4 | 🔴启动观察 | MACD金叉 **AND** RSI>50 **AND** 成交量>1.2倍 | MACD金叉+RSI>50，等待价格确认信号 | 禁止触发 |
+| P5 | 🔵相对走弱 | RSI<40 **AND** MACD死叉 **AND** 均线空头 | 轮动弱化状态 | 正常触发 |
+| P6 | 🟡相对强势 | 5日相对强度>2% | 短线相对强势状态 | 正常触发 |
 | — | ⚪中性 | 不满足以上任何条件 | 无信号 | — |
 
 ---
