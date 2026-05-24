@@ -576,15 +576,30 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
         else:
             return "🔴启动观察", "MACD金叉+RSI>50，等待价格确认信号"
 
-    # === 阶段八：相对走弱（持仓专用） ===
+    # === 阶段八：回撤关注（弱信号漏标拦截） ===
+    # 20日相对强度 < -10%：显著落后预警
+    rel_20d = etf_data['relative_strength'].get('20日', 0) or 0
+    rel_5d = etf_data['relative_strength'].get('5日', 0) or 0
+    rel_10d = etf_data['relative_strength'].get('10日', 0) or 0
+    rsi_low = etf_data['rsi'] < 40
+    ma_bearish = not etf_data['ma_bullish']
+    macd_dead = macd_deathcross(etf_data['macd_hist'], etf_data['prev_macd_hist'])
+
+    if rel_20d < -10:
+        return "⚠️20日显著落后", "20日超额收益低于沪深300 10%以上，轮动明显落后"
+    if rel_5d < 0 and rel_10d < 0:
+        return "⚠️持续走弱", "5日/10日相对强度同时为负，轮动趋势向下"
+    if rsi_low and not (macd_dead and ma_bearish):
+        return "⚠️弱势", "RSI<40，趋势偏弱，关注是否进一步恶化"
+
+    # === 阶段九：相对走弱（持仓专用） ===
     # 持仓板块 RSI < 40 + MACD 死叉 + 均线空头
-    if rsi_below_40 and macd_dead and ma_bearish:
+    if rsi_low and macd_dead and ma_bearish:
         return "🔵相对走弱", "原有趋势告破，轮动弱化状态"
 
-    # === 阶段八：其他观察信号 ===
-    if etf_data['relative_strength']['5日'] is not None:
-        if etf_data['relative_strength']['5日'] > 2:
-            return "🟡相对强势", "短线强势，但不构成操作依据"
+    # === 阶段十：其他观察信号 ===
+    if rel_5d > 2:
+        return "🟡相对强势", "短线强势，但不构成操作依据"
 
     # === 阶段九：扩散度低预警（辅助参考） ===
     # 扩散度 < 40% 且出现强势信号 → 输出提示，不改变信号
@@ -657,11 +672,15 @@ def determine_signal(etf_data, hs300_data, delay_flag=False):
 
 ### 重点关注
 
-- **🔴 启动观察**：无（数据均已延迟或信号不足）
-- **🟡 趋势增强**：通信设备（MACD 持续扩张，成交量放大 1.4 倍）
-- **🟢 动量加速**：机器人（RSI 71.2，赔率1.5:1，均线多头延续，拥挤度65）
+- **🔴 启动观察**：无
+- **🟡 趋势增强**：无（信号待确认）
+- **🟢 动量加速**：待确认
 - **⚠️ 过热风险**：半导体（RSI 70.6，拥挤度78，🔥拥挤状态）
 - **⚠️ 数据延迟**：卫星通信（最新数据 2026-05-21，延迟1天）
+- **⚠️ 回撤关注**：
+  - 电网设备（20日相对 -51.72%，⚠️20日显著落后）
+  - 卫星通信（RSI 48.63，⚠️持续走弱）
+  - 通信设备（RSI 30.79，⚠️弱势）
 
 ---
 
